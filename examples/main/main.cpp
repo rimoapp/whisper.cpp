@@ -11,6 +11,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <tuple>
+
 
 // Terminal color map. 10 colors grouped in ranges [0.0, 0.1, ..., 0.9]
 // Lowest is red, middle is yellow, highest is green.
@@ -277,6 +279,8 @@ void whisper_print_segment_callback(struct whisper_context * ctx, int n_new, voi
                 bool continued = false;
                 int64_t token_t0;
                 std::string utf_text;
+                std::vector<std::tuple<int64_t, int64_t, std::string >> pairs = {};
+
                 for (int j = 0; j < whisper_full_n_tokens(ctx, i); ++j) {
                     if (params.print_special == false) {
                         const whisper_token id = whisper_full_get_token_id(ctx, i, j);
@@ -299,8 +303,27 @@ void whisper_print_segment_callback(struct whisper_context * ctx, int n_new, voi
                       continued = true;
                       continue;
                     }
-
-                    printf("[%s --> %s]  %s%s\n", to_timestamp(token_t0).c_str(), to_timestamp(token.t1).c_str(), speaker.c_str(), utf_text.c_str());
+                    pairs.push_back({token_t0, token.t1, utf_text});
+                }
+                for (int i = 0; i < pairs.size(); i++ ){
+                    if(i == 0){
+                        continue;
+                    }
+                    std::tuple<int64_t, int64_t, std::string > pair0 = pairs[i-1];
+                    int64_t& t0 = std::get<0>(pair0);
+                    int64_t& t1 = std::get<1>(pair0);
+                    std::string& text = std::get<2>(pair0);
+                    if(text.compare("。") == 0 || text.compare("、") == 0){
+                        continue;
+                    }
+                    std::tuple<int64_t, int64_t, std::string > pair1 = pairs[i];
+                    std::string& next_text = std::get<2>(pair1);
+                    // printf("DEBUG %s, %s\n", text.c_str(), next_text.c_str());
+                    if(next_text.compare("。") == 0 || next_text.compare("、") == 0){
+                        t1 = std::get<1>(pair1);
+                        text += next_text;
+                    }
+                    printf("[%s --> %s]  %s%s\n", to_timestamp(t0).c_str(), to_timestamp(t1).c_str(), speaker.c_str(), text.c_str());
                 }
                 printf("\n");
             } else {
