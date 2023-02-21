@@ -305,6 +305,7 @@ void whisper_print_segment_callback(struct whisper_context * ctx, int n_new, voi
                     }
                     pairs.push_back({token_t0, token.t1, utf_text});
                 }
+                // TODO(temy13): help me
                 for (int i = 0; i < pairs.size(); i++ ){
                     if(i == 0){
                         continue;
@@ -318,7 +319,6 @@ void whisper_print_segment_callback(struct whisper_context * ctx, int n_new, voi
                     }
                     std::tuple<int64_t, int64_t, std::string > pair1 = pairs[i];
                     std::string& next_text = std::get<2>(pair1);
-                    // printf("DEBUG %s, %s\n", text.c_str(), next_text.c_str());
                     if(next_text.compare("。") == 0 || next_text.compare("、") == 0){
                         t1 = std::get<1>(pair1);
                         text += next_text;
