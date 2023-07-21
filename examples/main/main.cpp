@@ -11,6 +11,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <tuple>
+
 
 // Terminal color map. 10 colors grouped in ranges [0.0, 0.1, ..., 0.9]
 // Lowest is red, middle is yellow, highest is green.
@@ -75,6 +77,7 @@ struct whisper_params {
     bool no_timestamps = false;
 
     std::string language  = "en";
+    std::string prompt;
     std::string model     = "models/ggml-base.en.bin";
 
     std::vector<std::string> fname_inp = {};
@@ -115,6 +118,7 @@ bool whisper_params_parse(int argc, char ** argv, whisper_params & params) {
         else if (arg == "-pc"   || arg == "--print-colors")  { params.print_colors  = true; }
         else if (arg == "-nt"   || arg == "--no-timestamps") { params.no_timestamps = true; }
         else if (arg == "-l"    || arg == "--language")      { params.language      = argv[++i]; }
+        else if (                  arg == "--prompt")         { params.prompt         = argv[++i]; }
         else if (arg == "-m"    || arg == "--model")         { params.model         = argv[++i]; }
         else if (arg == "-f"    || arg == "--file")          { params.fname_inp.push_back(argv[++i]); }
         else {
@@ -153,6 +157,7 @@ void whisper_print_usage(int argc, char ** argv, const whisper_params & params) 
     fprintf(stderr, "  -pc,      --print-colors  [%-7s] print colors\n",                                   params.print_colors ? "true" : "false");
     fprintf(stderr, "  -nt,      --no-timestamps [%-7s] do not print timestamps\n",                        params.no_timestamps ? "false" : "true");
     fprintf(stderr, "  -l LANG,  --language LANG [%-7s] spoken language\n",                                params.language.c_str());
+    fprintf(stderr, "             --prompt PROMPT [%-7s] initial prompt\n",                            params.prompt.c_str());
     fprintf(stderr, "  -m FNAME, --model FNAME   [%-7s] model path\n",                                     params.model.c_str());
     fprintf(stderr, "  -f FNAME, --file FNAME    [%-7s] input WAV file path\n",                            "");
     fprintf(stderr, "\n");
@@ -274,6 +279,8 @@ void whisper_print_segment_callback(struct whisper_context * ctx, int n_new, voi
                 bool continued = false;
                 int64_t token_t0;
                 std::string utf_text;
+                std::vector<std::tuple<int64_t, int64_t, std::string >> pairs = {};
+
                 for (int j = 0; j < whisper_full_n_tokens(ctx, i); ++j) {
                     if (params.print_special == false) {
                         const whisper_token id = whisper_full_get_token_id(ctx, i, j);
@@ -296,8 +303,27 @@ void whisper_print_segment_callback(struct whisper_context * ctx, int n_new, voi
                       continued = true;
                       continue;
                     }
-
-                    printf("[%s --> %s]  %s%s\n", to_timestamp(token_t0).c_str(), to_timestamp(token.t1).c_str(), speaker.c_str(), utf_text.c_str());
+                    pairs.push_back({token_t0, token.t1, utf_text});
+                }
+                // TODO(temy13): help me
+                for (int i = 0; i < pairs.size(); i++ ){
+                    if(i == 0){
+                        continue;
+                    }
+                    std::tuple<int64_t, int64_t, std::string > pair0 = pairs[i-1];
+                    int64_t& t0 = std::get<0>(pair0);
+                    int64_t& t1 = std::get<1>(pair0);
+                    std::string& text = std::get<2>(pair0);
+                    if(text.compare("。") == 0 || text.compare("、") == 0){
+                        continue;
+                    }
+                    std::tuple<int64_t, int64_t, std::string > pair1 = pairs[i];
+                    std::string& next_text = std::get<2>(pair1);
+                    if(next_text.compare("。") == 0 || next_text.compare("、") == 0){
+                        t1 = std::get<1>(pair1);
+                        text += next_text;
+                    }
+                    printf("[%s --> %s]  %s%s\n", to_timestamp(t0).c_str(), to_timestamp(t1).c_str(), speaker.c_str(), text.c_str());
                 }
                 printf("\n");
             } else {
@@ -517,6 +543,22 @@ int main(int argc, char ** argv) {
         return 3;
     }
 
+    // initial prompt
+    std::vector<whisper_token> prompt_tokens;
+
+    if (!params.prompt.empty()) {
+        prompt_tokens.resize(1024);
+        prompt_tokens.resize(whisper_tokenize(ctx, params.prompt.c_str(), prompt_tokens.data(), prompt_tokens.size()));
+
+        fprintf(stderr, "\n");
+        fprintf(stderr, "initial prompt: '%s'\n", params.prompt.c_str());
+        fprintf(stderr, "initial tokens: [ ");
+        for (int i = 0; i < (int) prompt_tokens.size(); ++i) {
+            fprintf(stderr, "%d ", prompt_tokens[i]);
+        }
+        fprintf(stderr, "]\n");
+    }
+
     for (int f = 0; f < (int) params.fname_inp.size(); ++f) {
         const auto fname_inp = params.fname_inp[f];
 
@@ -653,6 +695,9 @@ int main(int argc, char ** argv) {
             wparams.max_len          = params.output_wts && params.max_len == 0 ? 60 : params.max_len;
 
             wparams.speed_up         = params.speed_up;
+
+            wparams.prompt_tokens     = prompt_tokens.empty() ? nullptr : prompt_tokens.data();
+            wparams.prompt_n_tokens   = prompt_tokens.empty() ? 0       : prompt_tokens.size();
 
             whisper_print_user_data user_data = { &params, &pcmf32s };
 

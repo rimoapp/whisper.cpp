@@ -131,6 +131,18 @@ extern "C" {
                                int   n_past,
                                int   n_threads);
 
+    // Convert the provided text into tokens.
+    // The tokens pointer must be large enough to hold the resulting tokens.
+    // Returns the number of tokens on success, no more than n_max_tokens
+    // Returns -1 on failure
+    // TODO: not sure if correct
+    WHISPER_API int whisper_tokenize(
+            struct whisper_context * ctx,
+                        const char * text,
+                     whisper_token * tokens,
+                               int   n_max_tokens);
+
+
     // Token sampling methods.
     // These are provided for convenience and can be used after each call to whisper_decode().
     // You can also implement your own sampling method using the whisper_get_probs() function.
